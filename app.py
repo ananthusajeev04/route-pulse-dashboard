@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from io import StringIO
 import requests
@@ -13,39 +12,34 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CUSTOM CSS ───────────────────────────────────────────────────────────────
+# ── CUSTOM CSS (From your HTML design) ───────────────────────────────────────
 st.markdown("""
 <style>
-/* Base */
+/* Base Dark Theme */
 [data-testid="stAppViewContainer"] { background: #0f1117; }
 [data-testid="stSidebar"] { background: #1a1d27; border-right: 1px solid rgba(255,255,255,0.08); }
 [data-testid="stSidebar"] * { color: #c8cad8 !important; }
 .block-container { padding: 1.5rem 2rem 2rem 2rem; max-width: 1400px; }
 
-/* Metric cards */
-[data-testid="stMetric"] {
-    background: #1a1d27;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    padding: 14px 18px;
-}
-[data-testid="stMetricLabel"] { font-size: 11px !important; color: #555a72 !important; text-transform: uppercase; letter-spacing: 0.06em; }
-[data-testid="stMetricValue"] { font-size: 26px !important; font-weight: 700 !important; color: #e8eaf0 !important; }
-[data-testid="stMetricDelta"] { font-size: 11px !important; }
+/* Custom Metric Cards matching your HTML */
+.metrics-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.custom-metric { background: #1a1d27; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; }
+.custom-metric-label { font-size: 11px; color: #555a72; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.custom-metric-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; color: #e8eaf0; }
+.custom-metric-sub { font-size: 11px; color: #8b90a8; }
+.custom-metric.accent .custom-metric-value { color: #4f7cff; }
+.custom-metric.green .custom-metric-value { color: #22c98a; }
+.custom-metric.amber .custom-metric-value { color: #ffb547; }
+.custom-metric.teal .custom-metric-value { color: #2fd4c8; }
+.custom-metric.red .custom-metric-value { color: #ff5b5b; }
 
-/* Title */
+/* Titles and Layout */
 h1 { color: #e8eaf0 !important; font-size: 22px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
-h2 { color: #e8eaf0 !important; font-size: 16px !important; font-weight: 600 !important; }
 h3 { color: #8b90a8 !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.06em; }
-
-/* Late row highlight */
-.late-highlight { background: rgba(255,91,91,0.12) !important; }
-
-/* Divider */
 hr { border-color: rgba(255,255,255,0.08) !important; }
 
-/* Dataframe */
-[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+/* Late Alert Chip */
+.late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: rgba(255,91,91,0.12); color: #ff5b5b; border: 1px solid rgba(255,91,91,0.2); margin-bottom: 15px; font-weight: 600;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,7 +69,6 @@ def fetch_gsheet(url: str) -> pd.DataFrame:
     r.raise_for_status()
     return parse_df(pd.read_csv(StringIO(r.text)))
 
-
 def parse_df(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df["Visit Time"] = pd.to_datetime(df["Visit Time"], errors="coerce")
@@ -85,10 +78,8 @@ def parse_df(df: pd.DataFrame) -> pd.DataFrame:
     df["Hour"] = df["Visit Time"].dt.hour + df["Visit Time"].dt.minute / 60
     return df.sort_values(["Route", "Visit Time"])
 
-
 def load_seed() -> pd.DataFrame:
     return parse_df(pd.read_csv(StringIO(SEED_CSV)))
-
 
 # ── ANALYTICS ENGINE ──────────────────────────────────────────────────────────
 def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
@@ -98,10 +89,11 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         n = len(grp)
         loc_acc = round((grp["Location Accuracy"] == "Yes").sum() / n * 100, 1) if n else 0
         sale_done = round((grp["Sale Done"] == "Yes").sum() / n * 100, 1) if n else 0
-        cancelled = round((grp["Sale Done"] == "Cancelled").sum() / n * 100, 1) if n else 0
+        
         first_time = grp.iloc[0]["TimeStr"]
-        first_h = grp.iloc[0]["Hour"]
-        late = first_h > 10.0
+        dt = grp.iloc[0]["Visit Time"]
+        late = dt.hour > 10 or (dt.hour == 10 and dt.minute > 0)
+        
         rows.append({
             "Date": date,
             "Route": route,
@@ -119,17 +111,14 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Last Sale": grp.iloc[-1]["Sale Done"],
             "Location Acc %": loc_acc,
             "Sale Done %": sale_done,
-            "Cancelled %": cancelled,
             "Late Start": late,
         })
     return pd.DataFrame(rows)
 
-
 # ── CHART HELPERS ─────────────────────────────────────────────────────────────
 DARK_BG = "#0f1117"
-SURFACE  = "#1a1d27"
-GRID_CLR = "rgba(255,255,255,0.06)"
 TEXT_CLR = "#8b90a8"
+GRID_CLR = "rgba(255,255,255,0.05)"
 
 def dark_layout(fig, title=""):
     fig.update_layout(
@@ -137,20 +126,19 @@ def dark_layout(fig, title=""):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT_CLR, size=11),
-        margin=dict(l=10, r=10, t=30 if title else 10, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         hoverlabel=dict(bgcolor="#22263a", font_color="#e8eaf0", bordercolor="#4f7cff"),
     )
     fig.update_xaxes(gridcolor=GRID_CLR, zerolinecolor=GRID_CLR, tickfont=dict(size=10))
     fig.update_yaxes(gridcolor=GRID_CLR, zerolinecolor="rgba(0,0,0,0)", tickfont=dict(size=10))
     return fig
 
-
+# Custom logic perfectly matching your HTML file
 def color_for_loc(v):
     return "#4f7cff" if v >= 75 else "#ffb547" if v >= 50 else "#ff5b5b"
 
 def color_for_sale(v):
     return "#22c98a" if v >= 50 else "#2fd4c8" if v >= 40 else "#4f7cff"
-
 
 def bar_chart_loc(df_sorted):
     colors = [color_for_loc(v) for v in df_sorted["Location Acc %"]]
@@ -168,7 +156,6 @@ def bar_chart_loc(df_sorted):
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
     return dark_layout(fig)
 
-
 def bar_chart_sale(df_sorted):
     colors = [color_for_sale(v) for v in df_sorted["Sale Done %"]]
     fig = go.Figure(go.Bar(
@@ -185,47 +172,11 @@ def bar_chart_sale(df_sorted):
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
     return dark_layout(fig)
 
-
-def late_start_chart(df_day):
-    df_sorted = df_day.sort_values("1st Time")
-    colors = ["#ff5b5b" if late else "#22c98a" for late in df_sorted["Late Start"]]
-    short = df_sorted["Route"].str.replace(" Route", "", regex=False)
-    fig = go.Figure(go.Bar(
-        x=short,
-        y=df_sorted["1st Time"].apply(lambda t: int(t.split(":")[0]) + int(t.split(":")[1]) / 60 if t != "—" else 0),
-        marker_color=colors,
-        text=df_sorted["1st Time"],
-        textposition="outside",
-        textfont=dict(size=9),
-        hovertemplate="<b>%{x}</b><br>First visit: %{text}<extra></extra>",
-    ))
-    fig.add_hline(y=10, line_dash="dash", line_color="#ffb547", line_width=1.5,
-                  annotation_text="10:00 AM threshold", annotation_font_color="#ffb547",
-                  annotation_font_size=10)
-    fig.update_yaxes(tickvals=[8, 9, 10, 11, 12, 13, 14],
-                     ticktext=["8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM"])
-    fig.update_layout(height=300, showlegend=False)
-    return dark_layout(fig, "First visit time per route (red = after 10 AM)")
-
-
 # ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
-        base = "background-color: rgba(255,91,91,0.10); color: #e8eaf0;" if row["Late Start"] else "background-color: #1a1d27; color: #e8eaf0;"
+        base = "background-color: rgba(255,91,91,0.06); color: #e8eaf0; border-left: 3px solid #ff5b5b;" if row["Late Start"] else "background-color: #1a1d27; color: #e8eaf0;"
         return [base] * len(row)
-
-    def sale_color(val):
-        if val == "Yes":   return "color: #22c98a; font-weight: 600;"
-        if val == "No":    return "color: #ff5b5b;"
-        if val == "Cancelled": return "color: #ffb547;"
-        return ""
-
-    def time_color(val):
-        if val == "—": return "color: #555a72;"
-        try:
-            h = int(val.split(":")[0])
-            return "color: #ff5b5b; font-weight: 600;" if h >= 10 and val != "—" else "color: #22c98a; font-weight: 600;"
-        except: return ""
 
     display_cols = ["Route", "User", "Total Visits",
                     "1st Shop", "1st Time", "1st Sale",
@@ -235,19 +186,7 @@ def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     df_disp = df[display_cols].copy()
 
     styler = df_disp.style.apply(row_color, axis=1)
-    for col in ["1st Sale", "2nd Sale", "Last Sale"]:
-        styler = styler.map(sale_color, subset=[col])
-    styler = styler.map(time_color, subset=["1st Time"])
-    styler = styler.format({"Location Acc %": "{:.1f}%", "Sale Done %": "{:.1f}%"})
-    styler = styler.set_table_styles([
-        {"selector": "th", "props": [("background", "#22263a"), ("color", "#8b90a8"),
-                                      ("font-size", "11px"), ("text-transform", "uppercase"),
-                                      ("letter-spacing", "0.05em"), ("padding", "8px 12px")]},
-        {"selector": "td", "props": [("padding", "7px 12px"), ("font-size", "12px"),
-                                      ("border-bottom", "1px solid rgba(255,255,255,0.06)")]},
-    ])
     return styler
-
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -262,8 +201,7 @@ with st.sidebar:
 
     if source == "Use sample data":
         raw_df = load_seed()
-        st.success("Sample data loaded (Apr 20, 2026)")
-
+        st.success("Sample data loaded")
     elif source == "Upload CSV":
         uploaded = st.file_uploader("Upload your CSV", type=["csv"])
         if uploaded:
@@ -272,9 +210,6 @@ with st.sidebar:
                 st.success(f"{len(raw_df):,} rows loaded")
             except Exception as e:
                 st.error(f"Parse error: {e}")
-        else:
-            st.info("Upload your daily CSV export")
-
     elif source == "Google Sheet URL":
         gurl = st.text_input("Paste published CSV URL",
                              placeholder="https://docs.google.com/spreadsheets/...")
@@ -286,14 +221,12 @@ with st.sidebar:
                 st.success(f"{len(raw_df):,} rows fetched")
             except Exception as e:
                 st.error(f"Fetch failed: {e}")
-                st.caption("Make sure sheet is published: File → Share → Publish to web → CSV")
 
     st.markdown("---")
     if raw_df is not None:
         st.markdown("### Filters")
         dates = sorted(raw_df["Date"].unique(), reverse=True)
-        selected_date = st.selectbox("Date", dates,
-                                     format_func=lambda d: d.strftime("%d %b %Y") if hasattr(d, "strftime") else str(d))
+        selected_date = st.selectbox("Date", dates)
 
         warehouses = ["All"] + sorted(raw_df["Warehouse Name"].dropna().unique().tolist())
         selected_wh = st.selectbox("Warehouse", warehouses)
@@ -302,15 +235,6 @@ with st.sidebar:
             "Route A–Z", "Location Acc ↓", "Sale Done % ↓",
             "Visits ↓", "Late starts first"
         ])
-
-    st.markdown("---")
-    st.markdown("### Legend")
-    st.markdown("🟥 **Red row** = first visit after 10 AM")
-    st.markdown("🟩 **Green row** = first visit by 10 AM")
-    st.markdown("🔵 **Blue bar** = loc acc ≥ 75%")
-    st.markdown("🟡 **Amber bar** = loc acc 50–74%")
-    st.markdown("🔴 **Red bar** = loc acc < 50%")
-
 
 # ── MAIN CONTENT ─────────────────────────────────────────────────────────────
 st.markdown("# 📍 Shop Visit Route Dashboard")
@@ -341,70 +265,93 @@ if day_data.empty:
     st.warning("No data for the selected filters.")
     st.stop()
 
-# ── METRIC CARDS ─────────────────────────────────────────────────────────────
-late_count = day_data["Late Start"].sum()
+# ── CUSTOM HTML METRICS (Matching your design) ───────────────────────────────
+total_visits = day_data["Total Visits"].sum()
 avg_loc = day_data["Location Acc %"].mean()
 avg_sale = day_data["Sale Done %"].mean()
-total_visits = day_data["Total Visits"].sum()
 
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Routes", len(day_data))
-col2.metric("Total Visits", f"{int(total_visits):,}")
-col3.metric("Avg Location Acc.", f"{avg_loc:.1f}%",
-            delta=f"{avg_loc - 70:.1f}% vs 70% target",
-            delta_color="normal")
-col4.metric("Avg Sale Done", f"{avg_sale:.1f}%",
-            delta=f"{avg_sale - 50:.1f}% vs 50% target",
-            delta_color="normal")
-col5.metric("⚠ Late Starts (>10 AM)", int(late_count),
-            delta=f"{int(late_count)} routes need attention" if late_count else "All on time",
-            delta_color="inverse" if late_count else "off")
+# Calculate "Bests"
+best_loc_route = day_data.loc[day_data["Location Acc %"].idxmax()]
+best_sale_route = day_data.loc[day_data["Sale Done %"].idxmax()]
+late_count = day_data["Late Start"].sum()
 
-st.markdown("---")
+loc_color_class = "green" if avg_loc >= 75 else "amber" if avg_loc >= 50 else "red"
 
-# ── LATE START TIMELINE ───────────────────────────────────────────────────────
-st.markdown("### ⏰ First visit time — late start analysis")
-st.plotly_chart(late_start_chart(day_data), use_container_width=True, config={"displayModeBar": False})
+metrics_html = f"""
+<div class="metrics-container">
+    <div class="custom-metric accent">
+        <div class="custom-metric-label">Routes</div>
+        <div class="custom-metric-value">{len(day_data)}</div>
+        <div class="custom-metric-sub">{selected_date}</div>
+    </div>
+    <div class="custom-metric teal">
+        <div class="custom-metric-label">Total visits</div>
+        <div class="custom-metric-value">{int(total_visits):,}</div>
+        <div class="custom-metric-sub">shop stops today</div>
+    </div>
+    <div class="custom-metric {loc_color_class}">
+        <div class="custom-metric-label">Avg location accuracy</div>
+        <div class="custom-metric-value">{avg_loc:.1f}%</div>
+        <div class="custom-metric-sub">Best: {best_loc_route['Route'].split(' ')[0]} ({best_loc_route['Location Acc %']}%)</div>
+    </div>
+    <div class="custom-metric green">
+        <div class="custom-metric-label">Avg sale done</div>
+        <div class="custom-metric-value">{avg_sale:.1f}%</div>
+        <div class="custom-metric-sub">Best: {best_sale_route['Route'].split(' ')[0]} ({best_sale_route['Sale Done %']}%)</div>
+    </div>
+    <div class="custom-metric red">
+        <div class="custom-metric-label">Late starts (after 10 AM)</div>
+        <div class="custom-metric-value">{late_count}</div>
+        <div class="custom-metric-sub">of {len(day_data)} routes — negative trend</div>
+    </div>
+</div>
+"""
+st.markdown(metrics_html, unsafe_allow_html=True)
+
+if late_count > 0:
+    st.markdown(f'<div class="late-alert-chip">⚠ {late_count} route(s) started after 10:00 AM</div>', unsafe_allow_html=True)
 
 # ── BAR CHARTS ───────────────────────────────────────────────────────────────
-st.markdown("### 📊 Performance by route")
 c1, c2 = st.columns(2)
 with c1:
-    st.markdown("**Location accuracy %**")
+    st.markdown("### Location accuracy % per route")
     st.plotly_chart(
         bar_chart_loc(day_data.sort_values("Location Acc %", ascending=True)),
         use_container_width=True, config={"displayModeBar": False}
     )
 with c2:
-    st.markdown("**Sale done %**")
+    st.markdown("### Sale done % per route")
     st.plotly_chart(
         bar_chart_sale(day_data.sort_values("Sale Done %", ascending=True)),
         use_container_width=True, config={"displayModeBar": False}
     )
 
-# ── DETAIL TABLE ─────────────────────────────────────────────────────────────
+# ── PROGRESS BAR TABLE ───────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🗂 Route details — first, 2nd & last shop visits")
+st.caption("🟥 Red tinted rows indicate a first visit after 10:00 AM")
 
-late_routes = day_data[day_data["Late Start"]]["Route"].tolist()
-if late_routes:
-    st.error(f"⚠ **{len(late_routes)} route(s) started after 10:00 AM:** {', '.join(late_routes)}")
-
+# We use st.column_config to recreate your HTML progress bars natively!
 st.dataframe(
     style_table(day_data),
     use_container_width=True,
     height=min(600, len(day_data) * 38 + 50),
     hide_index=True,
+    column_config={
+        "Location Acc %": st.column_config.ProgressColumn(
+            "Location Acc %",
+            help="Percentage of accurate locations",
+            format="%.1f%%",
+            min_value=0,
+            max_value=100,
+        ),
+        "Sale Done %": st.column_config.ProgressColumn(
+            "Sale Done %",
+            help="Percentage of sales completed",
+            format="%.1f%%",
+            min_value=0,
+            max_value=100,
+        ),
+        "Late Start": st.column_config.CheckboxColumn("Late (>10AM)"),
+    }
 )
-
-# ── DOWNLOAD ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-csv_out = day_data.drop(columns=["Late Start"]).to_csv(index=False)
-st.download_button(
-    "⬇ Download filtered report (CSV)",
-    csv_out,
-    file_name=f"route_report_{selected_date}.csv",
-    mime="text/csv",
-)
-
-st.caption("RoutePulse · Shop Visit Dashboard · Data refreshes on every load when connected to Google Sheets")
