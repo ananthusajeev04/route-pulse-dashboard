@@ -219,11 +219,13 @@ def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     display_cols = ["Route", "User", "Total Visits",
                     "1st Shop", "1st Time", "1st Sale",
                     "2nd Shop", "2nd Time", "2nd Sale",
-                    "Last Shop", "Last Time", "Last Sale",
+                    "Last Shop", "Last Shop Time", "Last Sale",
                     "Location Acc %", "Sale Done %", "Warehouse", "Late Start"]
-    df_disp = df[display_cols].copy()
-
-    styler = df_disp.style.apply(row_color, axis=1)
+    
+    # Rename "Last Time" to "Last Shop Time" internally for display to match your request
+    df_disp = df.rename(columns={"Last Time": "Last Shop Time"}).copy()
+    
+    styler = df_disp[display_cols].style.apply(row_color, axis=1)
     for col in ["1st Sale", "2nd Sale", "Last Sale"]:
         styler = styler.map(sale_color, subset=[col])
     styler = styler.map(time_color, subset=["1st Time"])
