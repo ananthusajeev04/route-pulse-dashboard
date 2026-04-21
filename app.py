@@ -12,21 +12,21 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CUSTOM CSS ───────────────────────────────────────────────────────────────
+# ── CUSTOM CSS (Light Theme) ─────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Base Dark Theme */
-[data-testid="stAppViewContainer"] { background: #0f1117; }
-[data-testid="stSidebar"] { background: #1a1d27; border-right: 1px solid rgba(255,255,255,0.08); }
-[data-testid="stSidebar"] * { color: #c8cad8 !important; }
+/* Base Light Theme */
+[data-testid="stAppViewContainer"] { background: #FFFFFF; }
+[data-testid="stSidebar"] { background: #F8F9FA; border-right: 1px solid rgba(0,0,0,0.08); }
+[data-testid="stSidebar"] * { color: #31333F !important; }
 .block-container { padding: 1.5rem 2rem 2rem 2rem; max-width: 1400px; }
 
 /* Custom Metric Cards */
 .metrics-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.custom-metric { background: #1a1d27; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; }
+.custom-metric { background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 .custom-metric-label { font-size: 11px; color: #555a72; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-.custom-metric-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; color: #e8eaf0; }
-.custom-metric-sub { font-size: 11px; color: #8b90a8; }
+.custom-metric-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; color: #111827; }
+.custom-metric-sub { font-size: 11px; color: #555a72; }
 .custom-metric.accent .custom-metric-value { color: #4f7cff; }
 .custom-metric.green .custom-metric-value { color: #22c98a; }
 .custom-metric.amber .custom-metric-value { color: #ffb547; }
@@ -34,9 +34,9 @@ st.markdown("""
 .custom-metric.red .custom-metric-value { color: #ff5b5b; }
 
 /* Titles and Layout */
-h1 { color: #e8eaf0 !important; font-size: 22px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
-h3 { color: #8b90a8 !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.06em; }
-hr { border-color: rgba(255,255,255,0.08) !important; }
+h1 { color: #111827 !important; font-size: 22px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
+h3 { color: #555a72 !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.06em; }
+hr { border-color: rgba(0,0,0,0.1) !important; }
 
 /* Late Alert Chip */
 .late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: rgba(255,91,91,0.12); color: #ff5b5b; border: 1px solid rgba(255,91,91,0.2); margin-bottom: 15px; font-weight: 600;}
@@ -60,13 +60,11 @@ def fetch_gsheet_with_counts(url: str):
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     
-    # Catch bad links
     if "<html" in r.text.lower()[:50]:
         raise ValueError("The link returned a web page instead of a CSV. Make sure you selected 'CSV' when publishing to the web.")
         
-    # Count the raw lines provided by Google Sheets
     lines = r.text.splitlines()
-    total_raw_rows = max(0, len(lines) - 1) # Subtract the header
+    total_raw_rows = max(0, len(lines) - 1)
     
     df_clean = parse_df(pd.read_csv(StringIO(r.text)))
     return df_clean, total_raw_rows
@@ -84,10 +82,7 @@ def parse_df(df: pd.DataFrame) -> pd.DataFrame:
         cols_found = ", ".join(df.columns.tolist()[:5])
         raise ValueError(f"Could not find 'Visit Time' column. Columns found: {cols_found}...")
 
-    # Aggressive Parsing
     df["Visit Time"] = pd.to_datetime(df[target_col], format='mixed', dayfirst=True, errors="coerce")
-    
-    # Drop rows where the date couldn't be read (or was completely blank)
     df_clean = df.dropna(subset=["Visit Time"]).copy()
     
     if df_clean.empty:
@@ -124,7 +119,8 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Warehouse": grp.iloc[0].get("Warehouse Name", "—"),
             "Total Visits": n,
             "1st Shop": grp.iloc[0]["Shop Name"],
-            "1st Time": first_time,
+            # Append red dot indicator directly to the text if late
+            "1st Time": f"🔴 {first_time}" if late else first_time,
             "1st Sale": grp.iloc[0]["Sale Done"],
             "2nd Shop": grp.iloc[1]["Shop Name"] if n > 1 else "—",
             "2nd Time": grp.iloc[1]["TimeStr"] if n > 1 else "—",
@@ -138,19 +134,18 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(rows)
 
-# ── CHART HELPERS ─────────────────────────────────────────────────────────────
-DARK_BG = "#0f1117"
-TEXT_CLR = "#8b90a8"
-GRID_CLR = "rgba(255,255,255,0.05)"
+# ── CHART HELPERS (Light Theme) ───────────────────────────────────────────────
+TEXT_CLR = "#111827"
+GRID_CLR = "#E5E7EB"
 
-def dark_layout(fig, title=""):
+def light_layout(fig, title=""):
     fig.update_layout(
         title=dict(text=title, font=dict(size=12, color=TEXT_CLR), x=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
         font=dict(color=TEXT_CLR, size=11),
         margin=dict(l=10, r=10, t=10, b=10),
-        hoverlabel=dict(bgcolor="#22263a", font_color="#e8eaf0", bordercolor="#4f7cff"),
+        hoverlabel=dict(bgcolor="#F8F9FA", font_color="#111827", bordercolor="#4f7cff"),
     )
     fig.update_xaxes(gridcolor=GRID_CLR, zerolinecolor=GRID_CLR, tickfont=dict(size=10))
     fig.update_yaxes(gridcolor=GRID_CLR, zerolinecolor="rgba(0,0,0,0)", tickfont=dict(size=10))
@@ -176,7 +171,7 @@ def bar_chart_loc(df_sorted):
     ))
     fig.update_xaxes(range=[0, 115], showgrid=True)
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
-    return dark_layout(fig)
+    return light_layout(fig)
 
 def bar_chart_sale(df_sorted):
     colors = [color_for_sale(v) for v in df_sorted["Sale Done %"]]
@@ -192,24 +187,42 @@ def bar_chart_sale(df_sorted):
     ))
     fig.update_xaxes(range=[0, 115], showgrid=True)
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
-    return dark_layout(fig)
+    return light_layout(fig)
 
-# ── TABLE STYLING ─────────────────────────────────────────────────────────────
+# ── TABLE STYLING (Light Theme) ───────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
+        # A faint red background for late starts that looks good on light themes
         if row["Late Start"]:
-            return ["background-color: #4a1c1c; color: #ffffff; border-left: 3px solid #ff5b5b;"] * len(row)
+            return ["background-color: rgba(255, 91, 91, 0.10); color: #111827;"] * len(row)
         else:
-            return ["background-color: #1a1d27; color: #e8eaf0;"] * len(row)
+            return ["color: #111827;"] * len(row)
+
+    def time_color(val):
+        # Highlights the 🔴 and the time in bold red
+        if "🔴" in str(val):
+            return "color: #ff5b5b; font-weight: 800;"
+        return ""
+
+    def sale_color(val):
+        if val == "Yes":   return "color: #22c98a; font-weight: 600;"
+        if val == "No":    return "color: #ff5b5b;"
+        if val == "Cancelled": return "color: #ffb547;"
+        return ""
 
     display_cols = ["Route", "User", "Total Visits",
                     "1st Shop", "1st Time", "1st Sale",
                     "2nd Shop", "2nd Time", "2nd Sale",
                     "Last Shop", "Last Time", "Last Sale",
                     "Location Acc %", "Sale Done %", "Warehouse", "Late Start"]
+    
     df_disp = df[display_cols].copy()
 
     styler = df_disp.style.apply(row_color, axis=1)
+    styler = styler.map(time_color, subset=["1st Time"])
+    for col in ["1st Sale", "2nd Sale", "Last Sale"]:
+        styler = styler.map(sale_color, subset=[col])
+        
     return styler
 
 # ── SIDEBAR & FILTERS ─────────────────────────────────────────────────────────
@@ -246,8 +259,6 @@ with st.sidebar:
                 raw_df, total_raw_rows = fetch_gsheet_with_counts(gurl)
                 if not raw_df.empty:
                     st.success(f"✅ {len(raw_df):,} valid rows processed.")
-                    
-                    # Display a diagnostic warning if rows were dropped
                     if len(raw_df) < total_raw_rows:
                         skipped = total_raw_rows - len(raw_df)
                         st.info(f"ℹ️ {skipped:,} rows were skipped because they were totally blank or the 'Visit Time' was unreadable.")
@@ -256,23 +267,18 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # ── ADVANCED FILTERS ──
     if raw_df is not None and not raw_df.empty:
         st.markdown("### 🎛️ Advanced Filters")
         
-        # 1. Date Filter
         dates = sorted(raw_df["Date"].unique(), reverse=True)
         selected_date = st.selectbox("📅 Select Date", dates)
 
-        # Build summary to figure out valid warehouses and users for that date
         temp_summary = build_route_summary(raw_df)
         day_data_raw = temp_summary[temp_summary["Date"].astype(str) == str(selected_date)].copy()
 
-        # 2. Multi-select for Warehouses
         warehouses = sorted(day_data_raw["Warehouse"].dropna().unique().tolist())
         selected_wh = st.multiselect("🏢 Warehouses", options=warehouses, default=warehouses)
 
-        # 3. Multi-select for Salespersons
         users = sorted(day_data_raw["User"].dropna().unique().tolist())
         selected_users = st.multiselect("👤 Salespersons", options=users, default=users)
 
@@ -291,29 +297,24 @@ if raw_df is None or raw_df.empty:
     st.info("👈 Select a valid data source to get started.")
     st.stop()
 
-# Build base summary
 summary = build_route_summary(raw_df)
 
 if summary.empty:
     st.error("No valid summaries could be built. Check data formatting.")
     st.stop()
 
-# Apply the Date filter
 day_data = summary[summary["Date"].astype(str) == str(selected_date)].copy()
 
-# Apply the new Multi-select Warehouse filter
 if selected_wh:
     day_data = day_data[day_data["Warehouse"].isin(selected_wh)]
 else:
     day_data = pd.DataFrame(columns=day_data.columns)
 
-# Apply the new Multi-select Salesperson filter
 if selected_users:
     day_data = day_data[day_data["User"].isin(selected_users)]
 else:
     day_data = pd.DataFrame(columns=day_data.columns)
 
-# Apply the Sort filter
 if sort_by == "Location Acc ↓":
     day_data = day_data.sort_values("Location Acc %", ascending=False)
 elif sort_by == "Sale Done % ↓":
@@ -325,7 +326,6 @@ elif sort_by == "Late starts first":
 else:
     day_data = day_data.sort_values("Route")
 
-# Stop rendering if filters result in no data
 if day_data.empty:
     st.warning("No data matches your current filter selections. Try adding back a Warehouse or Salesperson in the sidebar.")
     st.stop()
@@ -393,7 +393,7 @@ with c2:
 # ── PROGRESS BAR TABLE ───────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🗂 Route details — first, 2nd & last shop visits")
-st.caption("🟥 Red tinted rows indicate a first visit after 10:00 AM")
+st.caption("🔴 A red circle next to the 1st Time indicates a late start (after 10:00 AM)")
 
 st.dataframe(
     style_table(day_data),
@@ -415,6 +415,7 @@ st.dataframe(
             min_value=0,
             max_value=100,
         ),
-        "Late Start": st.column_config.CheckboxColumn("Late (>10AM)"),
+        # This completely hides the useless checkbox column from the interface!
+        "Late Start": None, 
     }
 )
