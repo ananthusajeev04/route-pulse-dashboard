@@ -49,30 +49,52 @@ Alakode Route,Gireesh (660235),2026-04-20 10:22:50,Greenco,1001,Completed,Inside
 Alakode Route,Gireesh (660235),2026-04-20 11:16:58,Rasheed,1002,Completed,Inside,Yes,Yes,,V01,Van 01,Yes,B1,B1,R01,Kannur Depot,01KN
 Alakode Route,Gireesh (660235),2026-04-20 20:15:03,CC Store,1003,Completed,,No,No,,V01,Van 01,No,B1,B1,R01,Kannur Depot,01KN
 Irikoor Route,Abhilash (660554),2026-04-20 10:24:31,DAY 2 DAY Express,2001,Completed,Inside,Yes,No,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
+Irikoor Route,Abhilash (660554),2026-04-20 10:27:09,CITY SUPER MARKET,2002,Completed,Inside,Yes,Yes,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
+Irikoor Route,Abhilash (660554),2026-04-20 20:53:36,C P Super,2003,Completed,,No,No,,V02,Van 02,No,B2,B2,R02,Kannur Depot,01KN
+Kumali Route,Sonu (660198),2026-04-20 09:16:12,Indian Store,3001,Completed,Inside,Yes,Yes,,V03,Van 03,Yes,B3,B3,R03,Kavalangadu Depot,01KV
 """
 
-# ── DATA LOADING ──────────────────────────────────────────────────────────────
+# ── BULLETPROOF DATA LOADING ──────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def fetch_gsheet(url: str) -> pd.DataFrame:
     r = requests.get(url, timeout=15)
     r.raise_for_status()
+    
+    # Catch bad links that return a webpage instead of a CSV
+    if "<html" in r.text.lower()[:50]:
+        raise ValueError("The link returned a web page instead of a CSV. Make sure you selected 'CSV' when publishing to the web.")
+        
     return parse_df(pd.read_csv(StringIO(r.text)))
 
 def parse_df(df: pd.DataFrame) -> pd.DataFrame:
+    # 1. Clean headers
     df.columns = df.columns.str.strip()
     
-    # Check if the column exists to prevent initial errors
-    if "Visit Time" not in df.columns:
-        return pd.DataFrame()
-        
-    # dayfirst=True is crucial for understanding DD-MM-YYYY formats properly
-    df["Visit Time"] = pd.to_datetime(df["Visit Time"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["Visit Time"])
+    # 2. Find the time column dynamically in case of slight spelling differences
+    target_col = None
+    for col in df.columns:
+        if "visit time" in col.lower() or "time" in col.lower():
+            target_col = col
+            break
+            
+    if not target_col:
+        cols_found = ", ".join(df.columns.tolist()[:5])
+        raise ValueError(f"Could not find 'Visit Time' column. Columns found in your sheet: {cols_found}...")
+
+    # 3. Save raw data examples just in case parsing fails
+    sample_data = df[target_col].dropna().astype(str).head(3).tolist()
+
+    # 4. Aggressive Parsing: Uses 'mixed' format to handle almost anything
+    df["Visit Time"] = pd.to_datetime(df[target_col], format='mixed', dayfirst=True, errors="coerce")
     
-    # If the dataframe is empty after dropping invalid dates, return early
-    if df.empty:
-        return df
-        
+    # 5. Drop invalid rows
+    df_clean = df.dropna(subset=["Visit Time"])
+    
+    # 6. Check if everything got dropped
+    if df_clean.empty:
+        raise ValueError(f"Could not understand the date format in your '{target_col}' column. Examples from your sheet: {sample_data}")
+
+    df = df_clean
     df["Date"] = df["Visit Time"].dt.date
     df["TimeStr"] = df["Visit Time"].dt.strftime("%H:%M")
     df["Hour"] = df["Visit Time"].dt.hour + df["Visit Time"].dt.minute / 60
@@ -83,13 +105,8 @@ def load_seed() -> pd.DataFrame:
 
 # ── ANALYTICS ENGINE ──────────────────────────────────────────────────────────
 def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
-    # Safety net: return an empty framework if no data is passed
     if df.empty or "Date" not in df.columns:
-        return pd.DataFrame(columns=[
-            "Date", "Route", "User", "Warehouse", "Total Visits",
-            "1st Shop", "1st Time", "1st Sale", "2nd Shop", "2nd Time", "2nd Sale",
-            "Last Shop", "Last Time", "Last Sale", "Location Acc %", "Sale Done %", "Late Start"
-        ])
+        return pd.DataFrame()
         
     rows = []
     for (route, date), grp in df.groupby(["Route", "Date"]):
@@ -218,7 +235,7 @@ with st.sidebar:
                 raw_df = parse_df(pd.read_csv(uploaded))
                 st.success(f"{len(raw_df):,} rows loaded")
             except Exception as e:
-                st.error(f"Parse error: {e}")
+                st.error(f"Parse error: {str(e)}")
     elif source == "Google Sheet URL":
         gurl = st.text_input("Paste published CSV URL",
                              placeholder="https://docs.google.com/spreadsheets/...")
@@ -227,16 +244,14 @@ with st.sidebar:
                 st.cache_data.clear()
             try:
                 raw_df = fetch_gsheet(gurl)
-                if raw_df.empty:
-                    st.warning("⚠️ Connected to Sheet, but 0 valid rows were found. Check your 'Visit Time' column.")
-                else:
+                if not raw_df.empty:
                     st.success(f"{len(raw_df):,} rows fetched")
             except Exception as e:
-                st.error(f"Fetch failed: {e}")
+                st.error(f"Fetch failed: {str(e)}")
 
     st.markdown("---")
     
-    # ── ADVANCED FILTERS (With Safety Checks) ──
+    # ── ADVANCED FILTERS ──
     if raw_df is not None and not raw_df.empty:
         st.markdown("### 🎛️ Advanced Filters")
         
@@ -262,18 +277,21 @@ with st.sidebar:
             "Visits ↓", "Late starts first"
         ])
     else:
-        # If the dataframe is empty, provide default dummy variables so the app doesn't break
         selected_date, selected_wh, selected_users, sort_by = None, [], [], "Route A–Z"
 
 # ── MAIN CONTENT ─────────────────────────────────────────────────────────────
 st.markdown("# 📍 Shop Visit Route Dashboard")
 
 if raw_df is None or raw_df.empty:
-    st.info("👈 Select a valid data source containing a 'Visit Time' column to get started.")
+    st.info("👈 Select a valid data source to get started.")
     st.stop()
 
 # Build base summary
 summary = build_route_summary(raw_df)
+
+if summary.empty:
+    st.error("No valid summaries could be built. Check data formatting.")
+    st.stop()
 
 # Apply the Date filter
 day_data = summary[summary["Date"].astype(str) == str(selected_date)].copy()
