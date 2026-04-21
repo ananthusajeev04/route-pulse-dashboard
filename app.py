@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CUSTOM CSS (From your HTML design) ───────────────────────────────────────
+# ── CUSTOM CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 /* Base Dark Theme */
@@ -21,7 +21,7 @@ st.markdown("""
 [data-testid="stSidebar"] * { color: #c8cad8 !important; }
 .block-container { padding: 1.5rem 2rem 2rem 2rem; max-width: 1400px; }
 
-/* Custom Metric Cards matching your HTML */
+/* Custom Metric Cards */
 .metrics-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .custom-metric { background: #1a1d27; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; }
 .custom-metric-label { font-size: 11px; color: #555a72; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
@@ -133,7 +133,6 @@ def dark_layout(fig, title=""):
     fig.update_yaxes(gridcolor=GRID_CLR, zerolinecolor="rgba(0,0,0,0)", tickfont=dict(size=10))
     return fig
 
-# Custom logic perfectly matching your HTML file
 def color_for_loc(v):
     return "#4f7cff" if v >= 75 else "#ffb547" if v >= 50 else "#ff5b5b"
 
@@ -175,8 +174,10 @@ def bar_chart_sale(df_sorted):
 # ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
-        base = "background-color: rgba(255,91,91,0.06); color: #e8eaf0; border-left: 3px solid #ff5b5b;" if row["Late Start"] else "background-color: #1a1d27; color: #e8eaf0;"
-        return [base] * len(row)
+        if row["Late Start"]:
+            return ["background-color: #4a1c1c; color: #ffffff; border-left: 3px solid #ff5b5b;"] * len(row)
+        else:
+            return ["background-color: #1a1d27; color: #e8eaf0;"] * len(row)
 
     display_cols = ["Route", "User", "Total Visits",
                     "1st Shop", "1st Time", "1st Sale",
@@ -188,7 +189,7 @@ def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     styler = df_disp.style.apply(row_color, axis=1)
     return styler
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+# ── SIDEBAR & FILTERS ─────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📊 RoutePulse")
     st.markdown("---")
@@ -223,15 +224,29 @@ with st.sidebar:
                 st.error(f"Fetch failed: {e}")
 
     st.markdown("---")
+    
+    # NEW ADVANCED FILTERS
     if raw_df is not None:
-        st.markdown("### Filters")
+        st.markdown("### 🎛️ Advanced Filters")
+        
+        # 1. Date Filter
         dates = sorted(raw_df["Date"].unique(), reverse=True)
-        selected_date = st.selectbox("Date", dates)
+        selected_date = st.selectbox("📅 Select Date", dates)
 
-        warehouses = ["All"] + sorted(raw_df["Warehouse Name"].dropna().unique().tolist())
-        selected_wh = st.selectbox("Warehouse", warehouses)
+        # Build a temporary summary just for the selected date to populate the next dropdowns accurately
+        temp_summary = build_route_summary(raw_df)
+        day_data_raw = temp_summary[temp_summary["Date"].astype(str) == str(selected_date)].copy()
 
-        sort_by = st.selectbox("Sort table by", [
+        # 2. Multi-select for Warehouses
+        warehouses = sorted(day_data_raw["Warehouse"].dropna().unique().tolist())
+        selected_wh = st.multiselect("🏢 Warehouses", options=warehouses, default=warehouses)
+
+        # 3. Multi-select for Salespersons
+        users = sorted(day_data_raw["User"].dropna().unique().tolist())
+        selected_users = st.multiselect("👤 Salespersons", options=users, default=users)
+
+        st.markdown("---")
+        sort_by = st.selectbox("↕️ Sort table by", [
             "Route A–Z", "Location Acc ↓", "Sale Done % ↓",
             "Visits ↓", "Late starts first"
         ])
@@ -243,13 +258,26 @@ if raw_df is None:
     st.info("👈 Select a data source from the sidebar to get started.")
     st.stop()
 
-# Build summary
+# Build base summary
 summary = build_route_summary(raw_df)
+
+# Apply the Date filter
 day_data = summary[summary["Date"].astype(str) == str(selected_date)].copy()
 
-if selected_wh != "All":
-    day_data = day_data[day_data["Warehouse"] == selected_wh]
+# Apply the new Multi-select Warehouse filter
+if selected_wh:
+    day_data = day_data[day_data["Warehouse"].isin(selected_wh)]
+else:
+    # If the user unchecks all warehouses, empty the dataframe
+    day_data = pd.DataFrame(columns=day_data.columns)
 
+# Apply the new Multi-select Salesperson filter
+if selected_users:
+    day_data = day_data[day_data["User"].isin(selected_users)]
+else:
+    day_data = pd.DataFrame(columns=day_data.columns)
+
+# Apply the Sort filter
 if sort_by == "Location Acc ↓":
     day_data = day_data.sort_values("Location Acc %", ascending=False)
 elif sort_by == "Sale Done % ↓":
@@ -261,16 +289,16 @@ elif sort_by == "Late starts first":
 else:
     day_data = day_data.sort_values("Route")
 
+# Stop rendering if filters result in no data
 if day_data.empty:
-    st.warning("No data for the selected filters.")
+    st.warning("No data matches your current filter selections. Try adding back a Warehouse or Salesperson in the sidebar.")
     st.stop()
 
-# ── CUSTOM HTML METRICS (Matching your design) ───────────────────────────────
+# ── CUSTOM HTML METRICS ──────────────────────────────────────────────────────
 total_visits = day_data["Total Visits"].sum()
 avg_loc = day_data["Location Acc %"].mean()
 avg_sale = day_data["Sale Done %"].mean()
 
-# Calculate "Bests"
 best_loc_route = day_data.loc[day_data["Location Acc %"].idxmax()]
 best_sale_route = day_data.loc[day_data["Sale Done %"].idxmax()]
 late_count = day_data["Late Start"].sum()
@@ -331,7 +359,6 @@ st.markdown("---")
 st.markdown("### 🗂 Route details — first, 2nd & last shop visits")
 st.caption("🟥 Red tinted rows indicate a first visit after 10:00 AM")
 
-# We use st.column_config to recreate your HTML progress bars natively!
 st.dataframe(
     style_table(day_data),
     use_container_width=True,
