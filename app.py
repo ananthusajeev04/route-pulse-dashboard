@@ -56,21 +56,24 @@ Kumali Route,Sonu (660198),2026-04-20 09:16:12,Indian Store,3001,Completed,Insid
 
 # ── BULLETPROOF DATA LOADING ──────────────────────────────────────────────────
 @st.cache_data(ttl=300)
-def fetch_gsheet(url: str) -> pd.DataFrame:
+def fetch_gsheet_with_counts(url: str):
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     
-    # Catch bad links that return a webpage instead of a CSV
+    # Catch bad links
     if "<html" in r.text.lower()[:50]:
         raise ValueError("The link returned a web page instead of a CSV. Make sure you selected 'CSV' when publishing to the web.")
         
-    return parse_df(pd.read_csv(StringIO(r.text)))
+    # Count the raw lines provided by Google Sheets
+    lines = r.text.splitlines()
+    total_raw_rows = max(0, len(lines) - 1) # Subtract the header
+    
+    df_clean = parse_df(pd.read_csv(StringIO(r.text)))
+    return df_clean, total_raw_rows
 
 def parse_df(df: pd.DataFrame) -> pd.DataFrame:
-    # 1. Clean headers
     df.columns = df.columns.str.strip()
     
-    # 2. Find the time column dynamically in case of slight spelling differences
     target_col = None
     for col in df.columns:
         if "visit time" in col.lower() or "time" in col.lower():
@@ -79,26 +82,21 @@ def parse_df(df: pd.DataFrame) -> pd.DataFrame:
             
     if not target_col:
         cols_found = ", ".join(df.columns.tolist()[:5])
-        raise ValueError(f"Could not find 'Visit Time' column. Columns found in your sheet: {cols_found}...")
+        raise ValueError(f"Could not find 'Visit Time' column. Columns found: {cols_found}...")
 
-    # 3. Save raw data examples just in case parsing fails
-    sample_data = df[target_col].dropna().astype(str).head(3).tolist()
-
-    # 4. Aggressive Parsing: Uses 'mixed' format to handle almost anything
+    # Aggressive Parsing
     df["Visit Time"] = pd.to_datetime(df[target_col], format='mixed', dayfirst=True, errors="coerce")
     
-    # 5. Drop invalid rows
-    df_clean = df.dropna(subset=["Visit Time"])
+    # Drop rows where the date couldn't be read (or was completely blank)
+    df_clean = df.dropna(subset=["Visit Time"]).copy()
     
-    # 6. Check if everything got dropped
     if df_clean.empty:
-        raise ValueError(f"Could not understand the date format in your '{target_col}' column. Examples from your sheet: {sample_data}")
+        raise ValueError("Zero dates could be successfully read from your file.")
 
-    df = df_clean
-    df["Date"] = df["Visit Time"].dt.date
-    df["TimeStr"] = df["Visit Time"].dt.strftime("%H:%M")
-    df["Hour"] = df["Visit Time"].dt.hour + df["Visit Time"].dt.minute / 60
-    return df.sort_values(["Route", "Visit Time"])
+    df_clean["Date"] = df_clean["Visit Time"].dt.date
+    df_clean["TimeStr"] = df_clean["Visit Time"].dt.strftime("%H:%M")
+    df_clean["Hour"] = df_clean["Visit Time"].dt.hour + df_clean["Visit Time"].dt.minute / 60
+    return df_clean.sort_values(["Route", "Visit Time"])
 
 def load_seed() -> pd.DataFrame:
     return parse_df(pd.read_csv(StringIO(SEED_CSV)))
@@ -228,14 +226,16 @@ with st.sidebar:
     if source == "Use sample data":
         raw_df = load_seed()
         st.success("Sample data loaded")
+        
     elif source == "Upload CSV":
         uploaded = st.file_uploader("Upload your CSV", type=["csv"])
         if uploaded:
             try:
                 raw_df = parse_df(pd.read_csv(uploaded))
-                st.success(f"{len(raw_df):,} rows loaded")
+                st.success(f"✅ {len(raw_df):,} rows loaded")
             except Exception as e:
                 st.error(f"Parse error: {str(e)}")
+                
     elif source == "Google Sheet URL":
         gurl = st.text_input("Paste published CSV URL",
                              placeholder="https://docs.google.com/spreadsheets/...")
@@ -243,9 +243,14 @@ with st.sidebar:
             if st.button("🔄 Fetch / Refresh", use_container_width=True):
                 st.cache_data.clear()
             try:
-                raw_df = fetch_gsheet(gurl)
+                raw_df, total_raw_rows = fetch_gsheet_with_counts(gurl)
                 if not raw_df.empty:
-                    st.success(f"{len(raw_df):,} rows fetched")
+                    st.success(f"✅ {len(raw_df):,} valid rows processed.")
+                    
+                    # Display a diagnostic warning if rows were dropped
+                    if len(raw_df) < total_raw_rows:
+                        skipped = total_raw_rows - len(raw_df)
+                        st.info(f"ℹ️ {skipped:,} rows were skipped because they were totally blank or the 'Visit Time' was unreadable.")
             except Exception as e:
                 st.error(f"Fetch failed: {str(e)}")
 
