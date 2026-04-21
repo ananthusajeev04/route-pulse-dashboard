@@ -49,17 +49,6 @@ Alakode Route,Gireesh (660235),2026-04-20 10:22:50,Greenco,1001,Completed,Inside
 Alakode Route,Gireesh (660235),2026-04-20 11:16:58,Rasheed,1002,Completed,Inside,Yes,Yes,,V01,Van 01,Yes,B1,B1,R01,Kannur Depot,01KN
 Alakode Route,Gireesh (660235),2026-04-20 20:15:03,CC Store,1003,Completed,,No,No,,V01,Van 01,No,B1,B1,R01,Kannur Depot,01KN
 Irikoor Route,Abhilash (660554),2026-04-20 10:24:31,DAY 2 DAY Express,2001,Completed,Inside,Yes,No,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
-Irikoor Route,Abhilash (660554),2026-04-20 10:27:09,CITY SUPER MARKET,2002,Completed,Inside,Yes,Yes,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
-Irikoor Route,Abhilash (660554),2026-04-20 20:53:36,C P Super,2003,Completed,,No,No,,V02,Van 02,No,B2,B2,R02,Kannur Depot,01KN
-Kumali Route,Sonu (660198),2026-04-20 09:16:12,Indian Store,3001,Completed,Inside,Yes,Yes,,V03,Van 03,Yes,B3,B3,R03,Kavalangadu Depot,01KV
-Kumali Route,Sonu (660198),2026-04-20 10:16:54,Cochin Coffe,3002,Completed,Inside,Yes,Yes,,V03,Van 03,Yes,B3,B3,R03,Kavalangadu Depot,01KV
-Kumali Route,Sonu (660198),2026-04-20 17:53:51,St Martin Store,3003,Completed,Inside,Yes,Yes,,V03,Van 03,Yes,B3,B3,R03,Kavalangadu Depot,01KV
-Omalloor Route,Pratheesh (660494),2026-04-20 09:44:21,JAGANNADH GENERAL STORE,4001,Completed,Inside,Yes,Yes,,V04,Van 04,Yes,B4,B4,R04,Valakom Depot,01VK
-Omalloor Route,Pratheesh (660494),2026-04-20 09:53:40,MARGIN FREE MARKET,4002,Completed,,No,No,,V04,Van 04,No,B4,B4,R04,Valakom Depot,01VK
-Omalloor Route,Pratheesh (660494),2026-04-20 18:09:21,Manna Bakery,4003,Completed,,No,No,,V04,Van 04,No,B4,B4,R04,Valakom Depot,01VK
-Charumoodu Route,Renjth (660473),2026-04-20 10:18:09,Rajakumari,5001,Completed,Inside,Yes,Yes,,V05,Van 05,Yes,B5,B5,R05,Valakom Depot,01VK
-Charumoodu Route,Renjth (660473),2026-04-20 10:40:40,HILAL STORE,5002,Completed,Inside,Yes,Yes,,V05,Van 05,Yes,B5,B5,R05,Valakom Depot,01VK
-Charumoodu Route,Renjth (660473),2026-04-20 20:57:44,Karthik Store,5003,Completed,,No,No,Low stock,V05,Van 05,No,B5,B5,R05,Valakom Depot,01VK
 """
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
@@ -71,8 +60,19 @@ def fetch_gsheet(url: str) -> pd.DataFrame:
 
 def parse_df(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
-    df["Visit Time"] = pd.to_datetime(df["Visit Time"], errors="coerce")
+    
+    # Check if the column exists to prevent initial errors
+    if "Visit Time" not in df.columns:
+        return pd.DataFrame()
+        
+    # dayfirst=True is crucial for understanding DD-MM-YYYY formats properly
+    df["Visit Time"] = pd.to_datetime(df["Visit Time"], dayfirst=True, errors="coerce")
     df = df.dropna(subset=["Visit Time"])
+    
+    # If the dataframe is empty after dropping invalid dates, return early
+    if df.empty:
+        return df
+        
     df["Date"] = df["Visit Time"].dt.date
     df["TimeStr"] = df["Visit Time"].dt.strftime("%H:%M")
     df["Hour"] = df["Visit Time"].dt.hour + df["Visit Time"].dt.minute / 60
@@ -83,6 +83,14 @@ def load_seed() -> pd.DataFrame:
 
 # ── ANALYTICS ENGINE ──────────────────────────────────────────────────────────
 def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
+    # Safety net: return an empty framework if no data is passed
+    if df.empty or "Date" not in df.columns:
+        return pd.DataFrame(columns=[
+            "Date", "Route", "User", "Warehouse", "Total Visits",
+            "1st Shop", "1st Time", "1st Sale", "2nd Shop", "2nd Time", "2nd Sale",
+            "Last Shop", "Last Time", "Last Sale", "Location Acc %", "Sale Done %", "Late Start"
+        ])
+        
     rows = []
     for (route, date), grp in df.groupby(["Route", "Date"]):
         grp = grp.reset_index(drop=True)
@@ -219,21 +227,24 @@ with st.sidebar:
                 st.cache_data.clear()
             try:
                 raw_df = fetch_gsheet(gurl)
-                st.success(f"{len(raw_df):,} rows fetched")
+                if raw_df.empty:
+                    st.warning("⚠️ Connected to Sheet, but 0 valid rows were found. Check your 'Visit Time' column.")
+                else:
+                    st.success(f"{len(raw_df):,} rows fetched")
             except Exception as e:
                 st.error(f"Fetch failed: {e}")
 
     st.markdown("---")
     
-    # NEW ADVANCED FILTERS
-    if raw_df is not None:
+    # ── ADVANCED FILTERS (With Safety Checks) ──
+    if raw_df is not None and not raw_df.empty:
         st.markdown("### 🎛️ Advanced Filters")
         
         # 1. Date Filter
         dates = sorted(raw_df["Date"].unique(), reverse=True)
         selected_date = st.selectbox("📅 Select Date", dates)
 
-        # Build a temporary summary just for the selected date to populate the next dropdowns accurately
+        # Build summary to figure out valid warehouses and users for that date
         temp_summary = build_route_summary(raw_df)
         day_data_raw = temp_summary[temp_summary["Date"].astype(str) == str(selected_date)].copy()
 
@@ -250,12 +261,15 @@ with st.sidebar:
             "Route A–Z", "Location Acc ↓", "Sale Done % ↓",
             "Visits ↓", "Late starts first"
         ])
+    else:
+        # If the dataframe is empty, provide default dummy variables so the app doesn't break
+        selected_date, selected_wh, selected_users, sort_by = None, [], [], "Route A–Z"
 
 # ── MAIN CONTENT ─────────────────────────────────────────────────────────────
 st.markdown("# 📍 Shop Visit Route Dashboard")
 
-if raw_df is None:
-    st.info("👈 Select a data source from the sidebar to get started.")
+if raw_df is None or raw_df.empty:
+    st.info("👈 Select a valid data source containing a 'Visit Time' column to get started.")
     st.stop()
 
 # Build base summary
@@ -268,7 +282,6 @@ day_data = summary[summary["Date"].astype(str) == str(selected_date)].copy()
 if selected_wh:
     day_data = day_data[day_data["Warehouse"].isin(selected_wh)]
 else:
-    # If the user unchecks all warehouses, empty the dataframe
     day_data = pd.DataFrame(columns=day_data.columns)
 
 # Apply the new Multi-select Salesperson filter
