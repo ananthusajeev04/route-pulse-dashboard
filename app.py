@@ -4,6 +4,10 @@ import plotly.graph_objects as go
 from io import StringIO
 import requests
 
+# ── SECURE DATABASE URL ──────────────────────────────────────────────────────
+# The URL is now locked into the code. End-users cannot change it.
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTKuzrr1EEvtxj5FlmC5PCYNguoOYzTwHWqwYYRhM4mMd78U49gIh_Q2CgPSoVSWKAXX1eiiiwJoqs7/pub?gid=0&single=true&output=csv"
+
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="RoutePulse · Shop Visit Dashboard",
@@ -42,17 +46,6 @@ hr { border-color: rgba(0,0,0,0.1) !important; }
 .late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: rgba(255,91,91,0.12); color: #ff5b5b; border: 1px solid rgba(255,91,91,0.2); margin-bottom: 15px; font-weight: 600;}
 </style>
 """, unsafe_allow_html=True)
-
-# ── SEED DATA (Apr 20 2026) ───────────────────────────────────────────────────
-SEED_CSV = """Route,User,Visit Time,Shop Name,Shop ID,Route Status,Shop Location Status,Location Accuracy,Sale Done,Sale Not Done Reason,Van Code,Van Name,QR Scanned,Beat,Planned Beat,Route Code,Warehouse Name,Warehouse Code
-Alakode Route,Gireesh (660235),2026-04-20 10:22:50,Greenco,1001,Completed,Inside,Yes,Yes,,V01,Van 01,Yes,B1,B1,R01,Kannur Depot,01KN
-Alakode Route,Gireesh (660235),2026-04-20 11:16:58,Rasheed,1002,Completed,Inside,Yes,Yes,,V01,Van 01,Yes,B1,B1,R01,Kannur Depot,01KN
-Alakode Route,Gireesh (660235),2026-04-20 20:15:03,CC Store,1003,Completed,,No,No,,V01,Van 01,No,B1,B1,R01,Kannur Depot,01KN
-Irikoor Route,Abhilash (660554),2026-04-20 10:24:31,DAY 2 DAY Express,2001,Completed,Inside,Yes,No,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
-Irikoor Route,Abhilash (660554),2026-04-20 10:27:09,CITY SUPER MARKET,2002,Completed,Inside,Yes,Yes,,V02,Van 02,Yes,B2,B2,R02,Kannur Depot,01KN
-Irikoor Route,Abhilash (660554),2026-04-20 20:53:36,C P Super,2003,Completed,,No,No,,V02,Van 02,No,B2,B2,R02,Kannur Depot,01KN
-Kumali Route,Sonu (660198),2026-04-20 09:16:12,Indian Store,3001,Completed,Inside,Yes,Yes,,V03,Van 03,Yes,B3,B3,R03,Kavalangadu Depot,01KV
-"""
 
 # ── BULLETPROOF DATA LOADING ──────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -93,9 +86,6 @@ def parse_df(df: pd.DataFrame) -> pd.DataFrame:
     df_clean["Hour"] = df_clean["Visit Time"].dt.hour + df_clean["Visit Time"].dt.minute / 60
     return df_clean.sort_values(["Route", "Visit Time"])
 
-def load_seed() -> pd.DataFrame:
-    return parse_df(pd.read_csv(StringIO(SEED_CSV)))
-
 # ── ANALYTICS ENGINE ──────────────────────────────────────────────────────────
 def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "Date" not in df.columns:
@@ -110,7 +100,9 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         
         first_time = grp.iloc[0]["TimeStr"]
         dt = grp.iloc[0]["Visit Time"]
-        late = dt.hour > 10 or (dt.hour == 10 and dt.minute > 0)
+        
+        # CHANGED: Late start threshold is now > 09:00 AM
+        late = dt.hour > 9 or (dt.hour == 9 and dt.minute > 0)
         
         rows.append({
             "Date": date,
@@ -119,7 +111,6 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Warehouse": grp.iloc[0].get("Warehouse Name", "—"),
             "Total Visits": n,
             "1st Shop": grp.iloc[0]["Shop Name"],
-            # Append red dot indicator directly to the text if late
             "1st Time": f"🔴 {first_time}" if late else first_time,
             "1st Sale": grp.iloc[0]["Sale Done"],
             "2nd Shop": grp.iloc[1]["Shop Name"] if n > 1 else "—",
@@ -134,7 +125,7 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(rows)
 
-# ── CHART HELPERS (Light Theme) ───────────────────────────────────────────────
+# ── CHART HELPERS ─────────────────────────────────────────────────────────────
 TEXT_CLR = "#111827"
 GRID_CLR = "#E5E7EB"
 
@@ -189,17 +180,15 @@ def bar_chart_sale(df_sorted):
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
     return light_layout(fig)
 
-# ── TABLE STYLING (Light Theme) ───────────────────────────────────────────────
+# ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
-        # A faint red background for late starts that looks good on light themes
         if row["Late Start"]:
             return ["background-color: rgba(255, 91, 91, 0.10); color: #111827;"] * len(row)
         else:
             return ["color: #111827;"] * len(row)
 
     def time_color(val):
-        # Highlights the 🔴 and the time in bold red
         if "🔴" in str(val):
             return "color: #ff5b5b; font-weight: 800;"
         return ""
@@ -230,40 +219,20 @@ with st.sidebar:
     st.markdown("## 📊 RoutePulse")
     st.markdown("---")
 
-    st.markdown("### Data source")
-    source = st.radio("", ["Use sample data", "Upload CSV", "Google Sheet URL"],
-                      label_visibility="collapsed")
-
+    # Secure fetching without user input
     raw_df = None
-
-    if source == "Use sample data":
-        raw_df = load_seed()
-        st.success("Sample data loaded")
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        st.cache_data.clear()
         
-    elif source == "Upload CSV":
-        uploaded = st.file_uploader("Upload your CSV", type=["csv"])
-        if uploaded:
-            try:
-                raw_df = parse_df(pd.read_csv(uploaded))
-                st.success(f"✅ {len(raw_df):,} rows loaded")
-            except Exception as e:
-                st.error(f"Parse error: {str(e)}")
-                
-    elif source == "Google Sheet URL":
-        gurl = st.text_input("Paste published CSV URL",
-                             placeholder="https://docs.google.com/spreadsheets/...")
-        if gurl:
-            if st.button("🔄 Fetch / Refresh", use_container_width=True):
-                st.cache_data.clear()
-            try:
-                raw_df, total_raw_rows = fetch_gsheet_with_counts(gurl)
-                if not raw_df.empty:
-                    st.success(f"✅ {len(raw_df):,} valid rows processed.")
-                    if len(raw_df) < total_raw_rows:
-                        skipped = total_raw_rows - len(raw_df)
-                        st.info(f"ℹ️ {skipped:,} rows were skipped because they were totally blank or the 'Visit Time' was unreadable.")
-            except Exception as e:
-                st.error(f"Fetch failed: {str(e)}")
+    try:
+        raw_df, total_raw_rows = fetch_gsheet_with_counts(SHEET_URL)
+        if not raw_df.empty:
+            st.success(f"✅ {len(raw_df):,} valid rows processed.")
+            if len(raw_df) < total_raw_rows:
+                skipped = total_raw_rows - len(raw_df)
+                st.info(f"ℹ️ {skipped:,} rows were skipped because they were blank or unreadable.")
+    except Exception as e:
+        st.error(f"Failed to load database: {str(e)}")
 
     st.markdown("---")
     
@@ -294,7 +263,7 @@ with st.sidebar:
 st.markdown("# 📍 Shop Visit Route Dashboard")
 
 if raw_df is None or raw_df.empty:
-    st.info("👈 Select a valid data source to get started.")
+    st.info("👈 Please refresh the data in the sidebar to get started.")
     st.stop()
 
 summary = build_route_summary(raw_df)
@@ -364,7 +333,7 @@ metrics_html = f"""
         <div class="custom-metric-sub">Best: {best_sale_route['Route'].split(' ')[0]} ({best_sale_route['Sale Done %']}%)</div>
     </div>
     <div class="custom-metric red">
-        <div class="custom-metric-label">Late starts (after 10 AM)</div>
+        <div class="custom-metric-label">Late starts (after 09:00 AM)</div>
         <div class="custom-metric-value">{late_count}</div>
         <div class="custom-metric-sub">of {len(day_data)} routes — negative trend</div>
     </div>
@@ -373,7 +342,7 @@ metrics_html = f"""
 st.markdown(metrics_html, unsafe_allow_html=True)
 
 if late_count > 0:
-    st.markdown(f'<div class="late-alert-chip">⚠ {late_count} route(s) started after 10:00 AM</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="late-alert-chip">⚠ {late_count} route(s) started after 09:00 AM</div>', unsafe_allow_html=True)
 
 # ── BAR CHARTS ───────────────────────────────────────────────────────────────
 c1, c2 = st.columns(2)
@@ -393,7 +362,7 @@ with c2:
 # ── PROGRESS BAR TABLE ───────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🗂 Route details — first, 2nd & last shop visits")
-st.caption("🔴 A red circle next to the 1st Time indicates a late start (after 10:00 AM)")
+st.caption("🔴 A red circle next to the 1st Time indicates a late start (after 09:00 AM)")
 
 st.dataframe(
     style_table(day_data),
@@ -415,7 +384,6 @@ st.dataframe(
             min_value=0,
             max_value=100,
         ),
-        # This completely hides the useless checkbox column from the interface!
         "Late Start": None, 
     }
 )
