@@ -31,18 +31,18 @@ st.markdown("""
 .custom-metric-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; color: #111827; }
 .custom-metric-sub { font-size: 11px; color: #555a72; }
 .custom-metric.accent .custom-metric-value { color: #4f7cff; }
-.custom-metric.green .custom-metric-value { color: #22c98a; }
-.custom-metric.amber .custom-metric-value { color: #ffb547; }
+.custom-metric.green .custom-metric-value { color: #059669; }
+.custom-metric.amber .custom-metric-value { color: #D97706; }
 .custom-metric.teal .custom-metric-value { color: #2fd4c8; }
-.custom-metric.red .custom-metric-value { color: #ff5b5b; }
+.custom-metric.red .custom-metric-value { color: #D92D2D; }
 
 /* Titles and Layout */
 h1 { color: #111827 !important; font-size: 22px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
 h3 { color: #555a72 !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.06em; }
 hr { border-color: rgba(0,0,0,0.1) !important; }
 
-/* Late Alert Chip */
-.late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: rgba(255,91,91,0.12); color: #ff5b5b; border: 1px solid rgba(255,91,91,0.2); margin-bottom: 15px; font-weight: 600;}
+/* Late Alert Chip - Changed to SOLID colors so dark mode doesn't bleed through */
+.late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: #FFF0F0; color: #D92D2D; border: 1px solid #FFCACA; margin-bottom: 15px; font-weight: 600;}
 
 /* 📱 MOBILE RESPONSIVENESS */
 @media (max-width: 768px) {
@@ -154,10 +154,10 @@ def light_layout(fig, title=""):
     return fig
 
 def color_for_loc(v):
-    return "#4f7cff" if v >= 75 else "#ffb547" if v >= 50 else "#ff5b5b"
+    return "#4f7cff" if v >= 75 else "#ffb547" if v >= 50 else "#ef4444"
 
 def color_for_sale(v):
-    return "#22c98a" if v >= 50 else "#2fd4c8" if v >= 40 else "#4f7cff"
+    return "#10b981" if v >= 50 else "#2fd4c8" if v >= 40 else "#4f7cff"
 
 def bar_chart_loc(df_sorted):
     colors = [color_for_loc(v) for v in df_sorted["Location Acc %"]]
@@ -194,22 +194,23 @@ def bar_chart_sale(df_sorted):
 # ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
-        # CRITICAL FIX: Explicitly forcing background-color: #FFFFFF so phones 
-        # in Dark Mode don't accidentally turn the table dark grey!
+        # CRITICAL FIX: Using a SOLID hex color (#FFF0F0) instead of rgba() transparency.
+        # This completely blocks the phone's dark mode from bleeding through the rows!
         if row["Late Start"]:
-            return ["background-color: rgba(255, 91, 91, 0.10); color: #111827;"] * len(row)
+            return ["background-color: #FFF0F0; color: #111827;"] * len(row)
         else:
             return ["background-color: #FFFFFF; color: #111827;"] * len(row)
 
     def time_color(val):
         if "🔴" in str(val):
-            return "color: #ff5b5b; font-weight: 800;"
+            return "color: #D92D2D; font-weight: 800;"
         return ""
 
     def sale_color(val):
-        if val == "Yes":   return "color: #22c98a; font-weight: 600;"
-        if val == "No":    return "color: #ff5b5b;"
-        if val == "Cancelled": return "color: #ffb547;"
+        # Slightly darker shades of green and red so they pop on white backgrounds
+        if val == "Yes":   return "color: #059669; font-weight: 600;" 
+        if val == "No":    return "color: #D92D2D;"
+        if val == "Cancelled": return "color: #D97706;"
         return ""
 
     display_cols = ["Route", "User", "Total Visits",
