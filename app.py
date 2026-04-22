@@ -46,22 +46,14 @@ hr { border-color: rgba(0,0,0,0.1) !important; }
 
 /* 📱 MOBILE RESPONSIVENESS */
 @media (max-width: 768px) {
-    /* Remove huge side padding so table fits edge-to-edge */
     .block-container { padding: 1rem 0.5rem 1rem 0.5rem !important; }
-    
-    /* Shrink titles */
     h1 { font-size: 18px !important; }
-    
-    /* Make metric cards stack cleanly on phones */
     .metrics-container { grid-template-columns: 1fr 1fr; gap: 8px; }
     .custom-metric { padding: 12px; }
     .custom-metric-value { font-size: 20px; }
-    
-    /* Ensure the table container handles horizontal overflow properly */
     [data-testid="stDataFrame"] { width: 100% !important; }
 }
 @media (max-width: 380px) {
-    /* On extremely small screens, stack metrics 1-by-1 */
     .metrics-container { grid-template-columns: 1fr; }
 }
 </style>
@@ -121,7 +113,6 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         first_time = grp.iloc[0]["TimeStr"]
         dt = grp.iloc[0]["Visit Time"]
         
-        # Late start threshold > 09:00 AM
         late = dt.hour > 9 or (dt.hour == 9 and dt.minute > 0)
         
         rows.append({
@@ -203,10 +194,12 @@ def bar_chart_sale(df_sorted):
 # ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
+        # CRITICAL FIX: Explicitly forcing background-color: #FFFFFF so phones 
+        # in Dark Mode don't accidentally turn the table dark grey!
         if row["Late Start"]:
             return ["background-color: rgba(255, 91, 91, 0.10); color: #111827;"] * len(row)
         else:
-            return ["color: #111827;"] * len(row)
+            return ["background-color: #FFFFFF; color: #111827;"] * len(row)
 
     def time_color(val):
         if "🔴" in str(val):
