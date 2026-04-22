@@ -5,7 +5,6 @@ from io import StringIO
 import requests
 
 # ── SECURE DATABASE URL ──────────────────────────────────────────────────────
-# The URL is now locked into the code. End-users cannot change it.
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTKuzrr1EEvtxj5FlmC5PCYNguoOYzTwHWqwYYRhM4mMd78U49gIh_Q2CgPSoVSWKAXX1eiiiwJoqs7/pub?gid=0&single=true&output=csv"
 
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -16,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CUSTOM CSS (Light Theme) ─────────────────────────────────────────────────
+# ── CUSTOM CSS (Mobile Responsive Light Theme) ───────────────────────────────
 st.markdown("""
 <style>
 /* Base Light Theme */
@@ -44,6 +43,27 @@ hr { border-color: rgba(0,0,0,0.1) !important; }
 
 /* Late Alert Chip */
 .late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: rgba(255,91,91,0.12); color: #ff5b5b; border: 1px solid rgba(255,91,91,0.2); margin-bottom: 15px; font-weight: 600;}
+
+/* 📱 MOBILE RESPONSIVENESS */
+@media (max-width: 768px) {
+    /* Remove huge side padding so table fits edge-to-edge */
+    .block-container { padding: 1rem 0.5rem 1rem 0.5rem !important; }
+    
+    /* Shrink titles */
+    h1 { font-size: 18px !important; }
+    
+    /* Make metric cards stack cleanly on phones */
+    .metrics-container { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .custom-metric { padding: 12px; }
+    .custom-metric-value { font-size: 20px; }
+    
+    /* Ensure the table container handles horizontal overflow properly */
+    [data-testid="stDataFrame"] { width: 100% !important; }
+}
+@media (max-width: 380px) {
+    /* On extremely small screens, stack metrics 1-by-1 */
+    .metrics-container { grid-template-columns: 1fr; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,7 +121,7 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         first_time = grp.iloc[0]["TimeStr"]
         dt = grp.iloc[0]["Visit Time"]
         
-        # CHANGED: Late start threshold is now > 09:00 AM
+        # Late start threshold > 09:00 AM
         late = dt.hour > 9 or (dt.hour == 9 and dt.minute > 0)
         
         rows.append({
@@ -219,7 +239,6 @@ with st.sidebar:
     st.markdown("## 📊 RoutePulse")
     st.markdown("---")
 
-    # Secure fetching without user input
     raw_df = None
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
@@ -362,7 +381,7 @@ with c2:
 # ── PROGRESS BAR TABLE ───────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🗂 Route details — first, 2nd & last shop visits")
-st.caption("🔴 A red circle next to the 1st Time indicates a late start (after 09:00 AM)")
+st.caption("🔴 A red circle next to the 1st Time indicates a late start (after 09:00 AM). Swipe left to view all columns.")
 
 st.dataframe(
     style_table(day_data),
