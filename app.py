@@ -41,7 +41,7 @@ h1 { color: #111827 !important; font-size: 22px !important; font-weight: 700 !im
 h3 { color: #555a72 !important; font-size: 12px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.06em; }
 hr { border-color: rgba(0,0,0,0.1) !important; }
 
-/* Late Alert Chip - Changed to SOLID colors so dark mode doesn't bleed through */
+/* Late Alert Chip */
 .late-alert-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 6px 12px; border-radius: 6px; background: #FFF0F0; color: #D92D2D; border: 1px solid #FFCACA; margin-bottom: 15px; font-weight: 600;}
 
 /* 📱 MOBILE RESPONSIVENESS */
@@ -108,7 +108,10 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
         grp = grp.reset_index(drop=True)
         n = len(grp)
         loc_acc = round((grp["Location Accuracy"] == "Yes").sum() / n * 100, 1) if n else 0
-        sale_done = round((grp["Sale Done"] == "Yes").sum() / n * 100, 1) if n else 0
+        
+        # Calculates and saves the raw count of successful sales
+        sale_done_count = (grp["Sale Done"] == "Yes").sum()
+        sale_done = round(sale_done_count / n * 100, 1) if n else 0
         
         first_time = grp.iloc[0]["TimeStr"]
         dt = grp.iloc[0]["Visit Time"]
@@ -121,6 +124,7 @@ def build_route_summary(df: pd.DataFrame) -> pd.DataFrame:
             "User": grp.iloc[0].get("User", "—"),
             "Warehouse": grp.iloc[0].get("Warehouse Name", "—"),
             "Total Visits": n,
+            "Sale Done Count": sale_done_count, # Save the raw count for the chart
             "1st Shop": grp.iloc[0]["Shop Name"],
             "1st Time": f"🔴 {first_time}" if late else first_time,
             "1st Sale": grp.iloc[0]["Sale Done"],
@@ -177,25 +181,32 @@ def bar_chart_loc(df_sorted):
 
 def bar_chart_sale(df_sorted):
     colors = [color_for_sale(v) for v in df_sorted["Sale Done %"]]
+    
+    # Generate the custom text showing Percentage (Sales Count / Total Visits)
+    chart_text = [
+        f"{pct}% ({int(cnt)}/{int(tot)})" 
+        for pct, cnt, tot in zip(df_sorted["Sale Done %"], df_sorted["Sale Done Count"], df_sorted["Total Visits"])
+    ]
+    
     fig = go.Figure(go.Bar(
         x=df_sorted["Sale Done %"],
         y=df_sorted["Route"].str.replace(" Route", "", regex=False),
         orientation="h",
         marker_color=colors,
-        text=[f"{v}%" for v in df_sorted["Sale Done %"]],
+        text=chart_text,
         textposition="outside",
         textfont=dict(size=10),
         hovertemplate="<b>%{y}</b><br>Sale Done: %{x}%<extra></extra>",
     ))
-    fig.update_xaxes(range=[0, 115], showgrid=True)
+    
+    # Expanded the x-axis range to 130 so the new, longer text labels don't get cut off
+    fig.update_xaxes(range=[0, 130], showgrid=True)
     fig.update_layout(height=max(280, len(df_sorted) * 26 + 40))
     return light_layout(fig)
 
 # ── TABLE STYLING ─────────────────────────────────────────────────────────────
 def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_color(row):
-        # CRITICAL FIX: Using a SOLID hex color (#FFF0F0) instead of rgba() transparency.
-        # This completely blocks the phone's dark mode from bleeding through the rows!
         if row["Late Start"]:
             return ["background-color: #FFF0F0; color: #111827;"] * len(row)
         else:
@@ -207,7 +218,6 @@ def style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
         return ""
 
     def sale_color(val):
-        # Slightly darker shades of green and red so they pop on white backgrounds
         if val == "Yes":   return "color: #059669; font-weight: 600;" 
         if val == "No":    return "color: #D92D2D;"
         if val == "Cancelled": return "color: #D97706;"
